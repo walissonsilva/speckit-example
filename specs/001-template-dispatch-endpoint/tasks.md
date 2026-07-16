@@ -29,9 +29,9 @@ Single NestJS project. Feature code under `src/modules/template-dispatch/`, shar
 
 **Purpose**: Install dependencies and scaffold Prisma so later phases can build on it.
 
-- [ ] T001 Install runtime dependencies: `npm install @prisma/client @aws-sdk/client-sqs @nestjs/config` and dev dependency `npm install -D prisma`
-- [ ] T002 Run `npx prisma init` (if not already present) and create `prisma/schema.prisma` with the `Template` model (`id`, `text`, `whatsappPhoneNumber` nullable, `createdAt`, `updatedAt`, `@@map("templates")`) per [data-model.md](./data-model.md)
-- [ ] T003 Add `.env` / `.env.example` entries for `DATABASE_URL`, `AWS_REGION`, `SQS_QUEUE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` per [quickstart.md](./quickstart.md)
+- [X] T001 Install runtime dependencies: `npm install @prisma/client @aws-sdk/client-sqs @nestjs/config` and dev dependency `npm install -D prisma`
+- [X] T002 Run `npx prisma init` (if not already present) and create `prisma/schema.prisma` with the `Template` model (`id`, `text`, `whatsappPhoneNumber` nullable, `createdAt`, `updatedAt`, `@@map("templates")`) per [data-model.md](./data-model.md)
+- [X] T003 Add `.env` / `.env.example` entries for `DATABASE_URL`, `AWS_REGION`, `SQS_QUEUE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` per [quickstart.md](./quickstart.md)
 
 **Checkpoint**: `npx prisma generate` runs cleanly and `PrismaClient` types include `Template`.
 
@@ -43,13 +43,13 @@ Single NestJS project. Feature code under `src/modules/template-dispatch/`, shar
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Register `ConfigModule.forRoot({ isGlobal: true })` in `src/app.module.ts`, loading `DATABASE_URL`, `AWS_REGION`, `SQS_QUEUE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
-- [ ] T005 Create `PrismaService` in `src/prisma/prisma.service.ts` (extends `PrismaClient`, implements `OnModuleInit`/`OnModuleDestroy`) and a `PrismaModule` in `src/prisma/prisma.module.ts` exporting it
-- [ ] T006 [P] Create `maskPhoneNumber(phone: string): string` utility in `src/common/utils/mask-phone-number.ts` (preserves only last 4 digits) per research.md §6
-- [ ] T007 [P] Create `ErrorResponseDto` in `src/common/dto/error-response.dto.ts` with `code` and `message` fields per [data-model.md](./data-model.md)
-- [ ] T008 Create `src/modules/template-dispatch/template-dispatch.module.ts` importing `PrismaModule`, declaring controller/service/repository/provider (empty skeleton, filled in later tasks), and register it in `src/app.module.ts`
-- [ ] T009 [P] Define `DispatchQueueProvider` interface (`enqueue(message): Promise<void>`) in `src/modules/template-dispatch/providers/dispatch-queue.provider.ts`
-- [ ] T010 [P] Define `TemplateRepository` interface (`findById(templateId: string): Promise<Template | null>`) in `src/modules/template-dispatch/repositories/template.repository.ts`
+- [X] T004 Register `ConfigModule.forRoot({ isGlobal: true })` in `src/app.module.ts`, loading `DATABASE_URL`, `AWS_REGION`, `SQS_QUEUE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+- [X] T005 Create `PrismaService` in `src/prisma/prisma.service.ts` (extends `PrismaClient`, implements `OnModuleInit`/`OnModuleDestroy`) and a `PrismaModule` in `src/prisma/prisma.module.ts` exporting it
+- [X] T006 [P] Create `maskPhoneNumber(phone: string): string` utility in `src/common/utils/mask-phone-number.ts` (preserves only last 4 digits) per research.md §6
+- [X] T007 [P] Create `ErrorResponseDto` in `src/common/dto/error-response.dto.ts` with `code` and `message` fields per [data-model.md](./data-model.md)
+- [X] T008 Create `src/modules/template-dispatch/template-dispatch.module.ts` importing `PrismaModule`, declaring controller/service/repository/provider (empty skeleton, filled in later tasks), and register it in `src/app.module.ts`
+- [X] T009 [P] Define `DispatchQueueProvider` interface (`enqueue(message): Promise<void>`) in `src/modules/template-dispatch/providers/dispatch-queue.provider.ts`
+- [X] T010 [P] Define `TemplateRepository` interface (`findById(templateId: string): Promise<Template | null>`) in `src/modules/template-dispatch/repositories/template.repository.ts`
 
 **Checkpoint**: Module compiles (`npm run build`), Prisma/Config wiring available for injection — user story implementation can now begin.
 
