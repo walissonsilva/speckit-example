@@ -48,6 +48,14 @@ VI); correlation id (`dispatchId`) propagado por todas as camadas e providers en
 camadas controller/service/repository/provider, sem novas entidades além de `Template` e
 `Disparo` (mensagem de fila, não persistida).
 
+**Ambiente de Desenvolvimento Local**: Docker Compose reproduzível com Postgres (persistência
+do `Template` via Prisma) e LocalStack (SQS, para o `SqsQueueProvider` apontar em ambiente
+local sem depender de credenciais/infra AWS reais). Fila criada automaticamente no startup do
+LocalStack. Variáveis de ambiente (`DATABASE_URL`, `AWS_ENDPOINT_URL`/`SQS_QUEUE_URL`,
+credenciais dummy) fornecidas via override para apontar a app para os containers locais. Este
+é um passo de setup de ambiente (Fase 0), não altera requisitos da feature nem o código já
+implementado nas Fases 1 e 2 — ver detalhes em [research.md](./research.md#8-ambiente-de-desenvolvimento-local-docker-compose).
+
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
@@ -80,6 +88,13 @@ specs/001-template-dispatch-endpoint/
 ### Source Code (repository root)
 
 ```text
+docker-compose.yml                         # Postgres + LocalStack (SQS) para dev local
+docker/
+└── localstack/
+    └── init/
+        └── 01-create-queue.sh             # cria a fila SQS no startup do LocalStack
+.env.example                                # DATABASE_URL e overrides de SQS p/ LocalStack
+
 prisma/
 └── schema.prisma                          # modelo Template (Prisma)
 
@@ -117,7 +132,10 @@ src/modules/template-dispatch/services/
 estrutura modular por feature (`src/modules/template-dispatch/`) com as quatro camadas
 exigidas pelo Princípio I: `controllers/` (HTTP + DTO), `services/` (regra de negócio),
 `repositories/` (Prisma) e `providers/` (SQS). `PrismaService` fica em `src/prisma/` como
-módulo de infraestrutura compartilhado, disponível para futuros repositories.
+módulo de infraestrutura compartilhado, disponível para futuros repositories. Adicionalmente
+(Fase 0, setup de ambiente), um `docker-compose.yml` na raiz do repositório sobe Postgres e
+LocalStack (SQS) para desenvolvimento local reproduzível, sem impacto na estrutura de código
+das Fases 1/2 já implementadas.
 
 ## Complexity Tracking
 

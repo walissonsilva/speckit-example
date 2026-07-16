@@ -7,24 +7,39 @@ Guia de validação end-to-end da feature. Para detalhes de schema e contrato, v
 
 - Node.js 20+ e dependências instaladas (`npm install`), incluindo as novas dependências da
   feature: `@prisma/client`, `prisma`, `@aws-sdk/client-sqs`, `@nestjs/config`.
-- PostgreSQL acessível (local via Docker ou instância de dev) com `DATABASE_URL` configurada.
-- Uma fila SQS real (dev/staging) ou um endpoint compatível (ex.: [ElasticMQ](https://github.com/softwaremill/elasticmq)
-  local) para testar o enfileiramento sem depender da AWS real.
+- Docker e Docker Compose para subir o ambiente local reproduzível (Postgres + LocalStack/SQS)
+  — ver [research.md §8](./research.md#8-ambiente-de-desenvolvimento-local-docker-compose).
+
+## Ambiente Local via Docker Compose
+
+```bash
+docker compose up -d
+```
+
+Sobe dois serviços:
+
+- **postgres** (`localhost:5432`) — persistência do `Template` via Prisma.
+- **localstack** (`localhost:4566`) — emula o SQS; a fila `template-dispatch-queue` é criada
+  automaticamente no startup do container (script de init do LocalStack), sem passo manual.
 
 ## Variáveis de Ambiente
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/speckit?schema=public"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/speckit?schema=public"
 AWS_REGION="us-east-1"
-SQS_QUEUE_URL="https://sqs.us-east-1.amazonaws.com/000000000000/template-dispatch-queue"
-# Opcionais — se ausentes, o SDK usa a cadeia padrão de credenciais da AWS
-AWS_ACCESS_KEY_ID=""
-AWS_SECRET_ACCESS_KEY=""
+SQS_QUEUE_URL="http://localhost:4566/000000000000/template-dispatch-queue"
+AWS_ENDPOINT_URL="http://localhost:4566"   # override do endpoint do SDK p/ apontar ao LocalStack
+AWS_ACCESS_KEY_ID="test"                    # credenciais dummy, LocalStack não valida
+AWS_SECRET_ACCESS_KEY="test"
 ```
+
+> Em ambiente real (staging/produção), basta omitir `AWS_ENDPOINT_URL` e usar credenciais e
+> `SQS_QUEUE_URL` reais — o `SqsDispatchQueueProvider` não muda de código entre ambientes.
 
 ## Setup
 
 ```bash
+docker compose up -d
 npx prisma migrate dev --name add_template
 npx prisma generate
 npm run start:dev
@@ -44,7 +59,9 @@ npm run start:dev
 
 3. **Esperado**: HTTP `202` com corpo `{ "dispatchId": "<uuid>" }`, respondido em menos de 1s
    (SC-001), sem aguardar o consumo da mensagem na fila.
-4. Verifique na fila SQS (ou no console do ElasticMQ) que uma mensagem foi publicada contendo
+4. Verifique na fila SQS (via `awslocal sqs receive-message --queue-url $SQS_QUEUE_URL` dentro
+   do container `localstack`, ou `aws --endpoint-url=http://localhost:4566 sqs receive-message
+   --queue-url $SQS_QUEUE_URL`) que uma mensagem foi publicada contendo
    `dispatchId`, `templateId: "T1"`, `clientPhoneNumber: "5511988887777"` e
    `whatsappPhoneNumber: "5511999990000"` (SC-002).
 
@@ -92,7 +109,8 @@ nenhuma mensagem publicada na fila.
 
 ## Cenário 5 — Timeout/indisponibilidade do SQS (Edge Case, fail-closed)
 
-1. Aponte `SQS_QUEUE_URL` para um endpoint inválido/indisponível, ou derrube o ElasticMQ local.
+1. Aponte `SQS_QUEUE_URL` para um endpoint inválido/indisponível, ou derrube o container
+   `localstack` (`docker compose stop localstack`).
 2. Repita o Cenário 1.
 
 **Esperado**: HTTP `503` com `{ "code": "QUEUE_UNAVAILABLE", "message": "..." }` em até ~1s

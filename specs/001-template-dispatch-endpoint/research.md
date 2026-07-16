@@ -103,6 +103,60 @@ a `process.env` espalhado pelo código.
 **Alternatives considered**: Acesso direto a `process.env` nos providers — rejeitado por
 dificultar testes (mock de config) e validação centralizada.
 
+## 8. Ambiente de Desenvolvimento Local (Docker Compose)
+
+**Decision**: `docker-compose.yml` na raiz do repositório com dois serviços:
+- `postgres`: imagem `postgres:16-alpine`, expõe `5432`, usada como storage do `Template`
+  via Prisma (mesmo `DATABASE_URL` de `research.md#1`).
+- `localstack`: imagem `localstack/localstack`, com `SERVICES=sqs` habilitado, expõe `4566`.
+  Um script de init (`docker/localstack/init/01-create-queue.sh`, montado no diretório
+  padrão de bootstrap do LocalStack `/etc/localstack/init/ready.d/`) roda `awslocal sqs
+  create-queue --queue-name template-dispatch-queue` automaticamente no startup do
+  container, garantindo que a fila já exista antes da app subir.
+
+A app se conecta a esses serviços via variáveis de ambiente (arquivo `.env` local, baseado
+em `.env.example`):
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/speckit?schema=public"
+AWS_REGION="us-east-1"
+SQS_QUEUE_URL="http://localhost:4566/000000000000/template-dispatch-queue"
+AWS_ENDPOINT_URL="http://localhost:4566"   # override do endpoint do SDK p/ apontar ao LocalStack
+AWS_ACCESS_KEY_ID="test"                    # credenciais dummy exigidas pelo SDK, LocalStack não valida
+AWS_SECRET_ACCESS_KEY="test"
+```
+
+O `SqsDispatchQueueProvider` (já implementado nas Fases 1/2) lê `AWS_ENDPOINT_URL` via
+`ConfigService` e, se presente, passa `endpoint: configService.get('AWS_ENDPOINT_URL')` ao
+client `@aws-sdk/client-sqs` — mesmo client usado em produção, sem branch de código
+condicional a ambiente (apenas configuração via env vars).
+
+**Rationale**: Elimina a dependência de uma fila SQS real (dev/staging) ou de ElasticMQ
+mencionada como alternativa em `quickstart.md`, permitindo que qualquer desenvolvedor suba um
+ambiente completo (`docker compose up`) sem credenciais AWS reais. LocalStack é o padrão de
+mercado para emular serviços AWS localmente e já resolve tanto SQS quanto a criação
+automática de recursos via scripts de init, sem exigir infraestrutura adicional. Postgres em
+container evita depender de uma instância local pré-instalada e mantém paridade de versão
+com produção.
+
+**Alternatives considered**:
+- ElasticMQ (citado em `quickstart.md` original) — rejeitado como padrão do setup: emula
+  apenas SQS (não outros serviços AWS que a feature possa vir a usar) e não oferece o mesmo
+  mecanismo de bootstrap de recursos que o LocalStack; pode continuar sendo usado
+  manualmente por quem preferir, mas não é o caminho documentado.
+- Postgres/SQS "reais" (RDS/SQS de uma conta AWS de dev) para desenvolvimento local —
+  rejeitado por exigir credenciais e conectividade externa, contrariando o objetivo de um
+  ambiente local reproduzível e isolado.
+- Criar a fila manualmente (via `awslocal` ou console) após o `docker compose up` — rejeitado
+  por ser um passo manual e não reproduzível; a criação automática via script de init do
+  LocalStack elimina esse atrito.
+
+**Nota de escopo**: Este é um passo de setup de ambiente de desenvolvimento (Fase 0). Não
+altera nenhum requisito funcional da spec, nem o código das Fases 1 e 2 já implementado — o
+`SqsDispatchQueueProvider` e o `PrismaService` já suportam configuração via variáveis de
+ambiente (`research.md#1` e `research.md#7`); o Docker Compose apenas fornece os serviços de
+backend que essas variáveis apontam em ambiente local.
+
 ## Resumo de Unknowns Resolvidos
 
 Todos os itens do Technical Context foram resolvidos nesta fase; nenhum "NEEDS
