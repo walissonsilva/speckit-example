@@ -20,7 +20,7 @@ Um sistema cliente solicita o disparo de um template de mensagem para um número
 
 **Acceptance Scenarios**:
 
-1. **Given** um template com id `T1` existente na base, associado ao número `whatsappPhoneNumber` `5511999990000`, **When** é enviado um POST com `{ templateId: "T1", clientPhoneNumber: "5511988887777" }`, **Then** a API responde indicando aceite do disparo e um item é enfileirado com `templateId: "T1"`, `clientPhoneNumber: "5511988887777"` e `whatsappPhoneNumber: "5511999990000"`.
+1. **Given** um template com id `T1` existente na base, associado ao número `whatsappPhoneNumber` `5511999990000`, **When** é enviado um POST com `{ templateId: "T1", clientPhoneNumber: "5511988887777" }`, **Then** a API responde indicando aceite do disparo (incluindo um `dispatchId` único) e um item é enfileirado com `templateId: "T1"`, `clientPhoneNumber: "5511988887777"` e `whatsappPhoneNumber: "5511999990000"`.
 2. **Given** um disparo aceito e enfileirado, **When** a resposta da API é observada, **Then** a resposta ocorre sem aguardar a entrega efetiva da mensagem ao cliente (a API não bloqueia até o envio real).
 
 ---
@@ -56,9 +56,18 @@ Um sistema cliente envia um payload incompleto ou malformado (por exemplo, sem `
 
 ### Edge Cases
 
-- O que acontece se o `templateId` existir, mas o template não tiver um `whatsappPhoneNumber` associado (dado inconsistente)? A API deve tratar isso como uma condição de erro e não enfileirar um disparo incompleto.
+- O que acontece se o `templateId` existir, mas o template não tiver um `whatsappPhoneNumber` associado (dado inconsistente)? A API deve tratar isso como uma condição de erro (HTTP 422 Unprocessable Entity) e não enfileirar um disparo incompleto.
 - O que acontece se o mesmo par `templateId` + `clientPhoneNumber` for enviado múltiplas vezes em sequência? Cada requisição é tratada de forma independente, gerando um novo item enfileirado por padrão (sem deduplicação nesta fase).
-- O que acontece se o serviço de enfileiramento estiver indisponível no momento do aceite? A API deve informar ao chamador que o disparo não pôde ser aceito, em vez de reportar sucesso falso.
+- O que acontece se o serviço de enfileiramento estiver indisponível ou não confirmar o enfileiramento dentro de 1 segundo (timeout)? A API deve tratar isso como falha (comportamento fail-closed) e informar ao chamador que o disparo não pôde ser aceito, em vez de reportar sucesso falso.
+
+## Clarifications
+
+### Session 2026-07-15
+
+- Q: A constituição do projeto (Princípio IV) exige que toda integração externa (aqui, o enfileiramento do disparo) declare um timeout explícito e um comportamento de falha documentado. Qual deve ser o timeout para a chamada de enfileiramento? → A: 1 segundo, com comportamento fail-closed (a API não aceita o disparo se o enfileiramento não confirmar dentro desse prazo).
+- Q: Para o edge case em que o template existe mas não tem `whatsappPhoneNumber` associado (dado inconsistente), qual resposta a API deve dar ao chamador? → A: HTTP 422 Unprocessable Entity, seguindo a convenção da constituição para entidade sintaticamente válida mas semanticamente não processável.
+- Q: O identificador de disparo (correlation id, exigido pelo Princípio VI para rastreabilidade) deve ser retornado ao chamador na resposta de aceite (202), para que ele possa referenciar/rastrear o disparo depois? → A: Sim, a resposta de aceite MUST incluir um `dispatchId` único.
+- Q: A spec não menciona autenticação/autorização para este endpoint. Ele deve exigir algum mecanismo de autenticação do sistema chamador? → A: Fora de escopo desta feature; autenticação é tratada por um mecanismo transversal já existente (ex.: gateway, middleware global), não por esta spec.
 
 ## Requirements *(mandatory)*
 
@@ -72,18 +81,21 @@ Um sistema cliente envia um payload incompleto ou malformado (por exemplo, sem `
 - **FR-006**: Quando o template não existir, a API MUST impedir que qualquer disparo seja enfileirado e MUST informar ao chamador que o disparo não ocorreu.
 - **FR-007**: A API MUST responder ao chamador assim que o disparo for aceito ou rejeitado, sem aguardar a confirmação de entrega efetiva ao cliente final.
 - **FR-008**: A API MUST tratar cada requisição de disparo de forma independente, sem deduplicar disparos repetidos para o mesmo `templateId` e `clientPhoneNumber`.
+- **FR-009**: A chamada de enfileiramento MUST ter um timeout explícito de 1 segundo; se o enfileiramento não confirmar dentro desse prazo, a API MUST aplicar comportamento fail-closed, tratando o disparo como não aceito e informando o chamador, em vez de reportar sucesso falso.
+- **FR-010**: Quando o template existir mas não possuir `whatsappPhoneNumber` associado (dado inconsistente), a API MUST rejeitar o disparo com HTTP 422 Unprocessable Entity e não enfileirar um item incompleto.
+- **FR-011**: A resposta de aceite do disparo MUST incluir um `dispatchId` único, correlacionável com os logs internos do processamento, para que o chamador possa referenciar o disparo posteriormente.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Template**: representa uma mensagem pré-definida disponível para disparo. Atributos principais: identificador (`templateId`), texto da mensagem, e o número de WhatsApp (`whatsappPhoneNumber`) pelo qual a mensagem é enviada ao cliente.
-- **Disparo (item enfileirado)**: representa uma solicitação de envio aceita para processamento assíncrono. Atributos principais: `templateId`, `clientPhoneNumber` (destinatário) e `whatsappPhoneNumber` (número de origem, herdado do template).
+- **Disparo (item enfileirado)**: representa uma solicitação de envio aceita para processamento assíncrono. Atributos principais: `dispatchId` (identificador único retornado ao chamador e usado como correlation id nos logs), `templateId`, `clientPhoneNumber` (destinatário) e `whatsappPhoneNumber` (número de origem, herdado do template).
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
 - **SC-001**: O chamador recebe uma resposta de aceite ou rejeição do disparo em menos de 1 segundo, sem aguardar o envio efetivo da mensagem.
-- **SC-002**: 100% dos disparos aceitos para templates existentes resultam em um item enfileirado contendo `templateId`, `clientPhoneNumber` e `whatsappPhoneNumber` completos e corretos.
+- **SC-002**: 100% dos disparos aceitos para templates existentes resultam em um item enfileirado contendo `templateId`, `clientPhoneNumber` e `whatsappPhoneNumber` completos e corretos, e em uma resposta ao chamador contendo um `dispatchId` único.
 - **SC-003**: 100% das requisições que referenciam um `templateId` inexistente resultam em nenhum item enfileirado e em uma resposta clara de que o disparo não ocorreu.
 - **SC-004**: 100% das requisições com payload inválido ou incompleto são rejeitadas antes de qualquer busca na base de templates.
 
@@ -94,3 +106,4 @@ Um sistema cliente envia um payload incompleto ou malformado (por exemplo, sem `
 - O cadastro e a gestão dos templates (criação, edição, texto) ocorrem em outro fluxo, fora do escopo desta feature.
 - Não há necessidade de deduplicação ou limitação de taxa de disparos repetidos nesta fase.
 - Um `templateId` existente sempre possui um `whatsappPhoneNumber` associado válido; a ausência desse dado é tratada como condição de erro, não como caso comum.
+- Autenticação/autorização do sistema chamador é responsabilidade de um mecanismo transversal já existente (ex.: gateway, middleware global) e está fora do escopo desta feature.

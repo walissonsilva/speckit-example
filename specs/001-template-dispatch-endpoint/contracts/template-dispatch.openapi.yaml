@@ -1,0 +1,105 @@
+openapi: 3.0.3
+info:
+  title: Template Dispatch API
+  version: "1.0.0"
+  description: >
+    Endpoint de disparo de template: aceita um disparo de mensagem para um
+    template existente e o enfileira para processamento assíncrono, sem
+    aguardar a entrega efetiva ao cliente final.
+paths:
+  /template-dispatches:
+    post:
+      operationId: dispatchTemplate
+      summary: Solicita o disparo de um template para um cliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DispatchTemplateRequest'
+      responses:
+        '202':
+          description: >
+            Disparo aceito e enfileirado para processamento assíncrono.
+            Não implica envio efetivo da mensagem ao cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DispatchAcceptedResponse'
+        '400':
+          description: Payload inválido ou incompleto (validação de DTO falhou).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Nenhum template encontrado para o `templateId` informado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: >
+            Template encontrado, mas sem `whatsappPhoneNumber` associado
+            (dado inconsistente) — disparo não pode ser processado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: >
+            Falha ao enfileirar o disparo (indisponibilidade do SQS ou timeout
+            de 1s excedido) — comportamento fail-closed. Disparo não aceito.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    DispatchTemplateRequest:
+      type: object
+      required:
+        - templateId
+        - clientPhoneNumber
+      properties:
+        templateId:
+          type: string
+          description: Identificador do template a ser disparado.
+          example: T1
+        clientPhoneNumber:
+          type: string
+          description: Número do destinatário no formato E.164.
+          pattern: '^\+?[1-9]\d{1,14}$'
+          example: "5511988887777"
+      additionalProperties: false
+
+    DispatchAcceptedResponse:
+      type: object
+      required:
+        - dispatchId
+      properties:
+        dispatchId:
+          type: string
+          format: uuid
+          description: >
+            Identificador único do disparo, usado como correlation id nos
+            logs internos e para referência futura pelo chamador.
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Código de erro estável.
+          enum:
+            - VALIDATION_ERROR
+            - TEMPLATE_NOT_FOUND
+            - TEMPLATE_MISSING_WHATSAPP_NUMBER
+            - QUEUE_UNAVAILABLE
+        message:
+          type: string
+          description: Mensagem legível descrevendo o erro.
