@@ -1,98 +1,104 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# 🌱 SpecKit Flow Exercise
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Serviço em NestJS responsável por receber pedidos de despacho de templates de mensagem do WhatsApp, validar o template contra a base de dados e enfileirar o envio de forma assíncrona via AWS SQS.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+O chamador não aguarda a entrega efetiva da mensagem — apenas a confirmação de que o pedido foi aceito ou rejeitado.
 
-## Description
+## Funcionalidades
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+### `POST /template-dispatches`
 
-## Project setup
+Recebe `{ templateId, clientPhoneNumber }`, valida o template no Postgres e publica o pedido na fila SQS.
+
+- **202 Accepted** — pedido aceito, retorna um `dispatchId` único.
+- **404 Not Found** (`TEMPLATE_NOT_FOUND`) — o `templateId` informado não existe.
+- **422 Unprocessable Entity** (`TEMPLATE_MISSING_WHATSAPP_NUMBER`) — o template existe, mas não possui um número de WhatsApp configurado.
+- **503 Service Unavailable** (`QUEUE_UNAVAILABLE`) — a fila não confirmou o enfileiramento dentro do timeout de 1s; falha de forma fail-closed, nunca reportando sucesso indevido.
+
+### `GET /health`
+
+Healthcheck simples, retorna `{ status: 'OK' }`.
+
+## Stack técnica
+
+- [NestJS](https://nestjs.com/) 11 (TypeScript) sobre Express
+- [Prisma](https://www.prisma.io/) 7 + PostgreSQL
+- AWS SQS (`@aws-sdk/client-sqs`), com [LocalStack](https://localstack.cloud/) para desenvolvimento local
+- `class-validator` / `class-transformer` para validação de payloads
+- Jest + Supertest para testes unitários e e2e
+
+## Pré-requisitos
+
+- Node.js
+- Docker e Docker Compose
+
+## Configuração do projeto
 
 ```bash
 $ npm install
 ```
 
-## Compile and run the project
+Copie o arquivo de variáveis de ambiente de exemplo e ajuste se necessário:
 
 ```bash
-# development
+$ cp .env.example .env
+```
+
+Principais variáveis (ver `.env.example`):
+
+- `DATABASE_URL` — string de conexão do Postgres
+- `AWS_REGION`, `SQS_QUEUE_URL` — configuração da fila SQS
+- `AWS_ENDPOINT_URL` — aponta o SDK da AWS para o LocalStack em desenvolvimento local
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — credenciais dummy usadas com o LocalStack
+
+Suba a infraestrutura local (Postgres em `localhost:5432` e LocalStack/SQS em `localhost:4566`, com a fila `template-dispatch-queue` já criada):
+
+```bash
+$ docker compose up -d
+```
+
+Execute as migrations do Prisma:
+
+```bash
+$ npx prisma migrate dev --name add_template
+$ npx prisma generate
+```
+
+## Rodando o projeto
+
+```bash
+# desenvolvimento
 $ npm run start
 
-# watch mode
+# modo watch
 $ npm run start:dev
 
-# production mode
+# produção
 $ npm run start:prod
 ```
 
-## Run tests
+## Testes
 
 ```bash
-# unit tests
+# testes unitários
 $ npm run test
 
-# e2e tests
+# testes e2e
 $ npm run test:e2e
 
-# test coverage
+# cobertura de testes
 $ npm run test:cov
 ```
 
-## Deployment
+## Documentação adicional
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Este projeto segue o workflow [spec-kit](https://github.com/github/spec-kit). A especificação detalhada da funcionalidade, plano técnico, modelo de dados e contrato OpenAPI da API estão em [`specs/001-template-dispatch-endpoint/`](specs/001-template-dispatch-endpoint/):
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+- `spec.md` — especificação funcional
+- `plan.md` — plano de implementação
+- `data-model.md` — modelo de dados
+- `contracts/template-dispatch.openapi.yaml` — contrato OpenAPI do endpoint
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+## Licença
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Este projeto é privado e não possui licença (`UNLICENSED`).
